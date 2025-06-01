@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -77,9 +78,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.fyp"
+    namespace "com.constructai.app"
     defaultConfig {
-        applicationId "com.fyp"
+        applicationId "com.constructai.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -105,11 +106,27 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+
+    // Add this block for vector icons
+    sourceSets {
+        main {
+            assets.srcDirs += ['../../node_modules/react-native-vector-icons/Fonts']
+        }
+    }
 }
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // Import the Firebase BoM
+    implementation platform('com.google.firebase:firebase-bom:32.7.2')
+
+    // Firebase dependencies
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.firebase:firebase-firestore'
+    implementation 'com.google.firebase:firebase-storage'
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

@@ -1,0 +1,30 @@
+{
+    "project_info": {
+      "project_number": "348686132981",
+      "firebase_url": "https://construction-database-5ef54-default-rtdb.asia-southeast1.firebasedatabase.app",
+      "project_id": "construction-database-5ef54",
+      "storage_bucket": "construction-database-5ef54.firebasestorage.app"
+    },
+    "client": [
+      {
+        "client_info": {
+          "mobilesdk_app_id": "1:348686132981:android:af929e83a5bb88918d47bc",
+          "android_client_info": {
+            "package_name": "com.constructai.app"
+          }
+        },
+        "oauth_client": [],
+        "api_key": [
+          {
+            "current_key": "AIzaSyCMLxCJHPh_NHiEFHPIHL4tD9dZIHt869k"
+          }
+        ],
+        "services": {
+          "appinvite_service": {
+            "other_platform_oauth_client": []
+          }
+        }
+      }
+    ],
+    "configuration_version": "1"
+  }

@@ -1,4 +1,4 @@
-package com.fyp
+package com.constructai.app
 
 import android.app.Application
 import com.facebook.react.PackageList
@@ -41,4 +41,4 @@ class MainApplication : Application(), ReactApplication {
       load()
     }
   }
-}
+} 
