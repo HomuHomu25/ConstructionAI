@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,20 +14,45 @@ import {
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import LoadingIndicator from '../../components/common/LoadingIndicator';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import storage from '@react-native-firebase/storage';
+import firestore from '@react-native-firebase/firestore';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 const TARGET_IMAGE_SIZE = 512; // Size for normalized images
 
-// Separate Form Component with the working input solution
-const EnvironmentalForm = React.memo(({ environmentalData, onUpdateData }) => {
-  const { theme } = useTheme();
-  const weatherOptions = ['Sunny', 'Cloudy', 'Rainy', 'Stormy'];
-  const lightConditions = ['Daylight', 'Dawn/Dusk', 'Night', 'Artificial'];
+// Helper function to upload image to Firebase Storage
+const uploadImageToFirebase = async (uri, path) => {
+  try {
+    // Generate a unique filename using timestamp
+    const timestamp = new Date().getTime();
+    const filename = `${timestamp}_${uri.split('/').pop()}`;
+    const storageRef = storage().ref(`${path}/${filename}`);
 
-  const renderInput = ({ label, value, key, keyboardType = 'default', suffix, multiline = false }) => (
+    // Upload the file
+    await storageRef.putFile(uri);
+
+    // Get the public download URL
+    const downloadUrl = await storageRef.getDownloadURL();
+    return downloadUrl;
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    throw error;
+  }
+};
+
+const ReportForm = React.memo(({ reportData, onUpdateData, sites, currentUser }) => {
+  const { theme } = useTheme();
+  const [showSiteModal, setShowSiteModal] = useState(false);
+
+  const renderInput = ({ label, value, key, keyboardType = 'default', multiline = false }) => (
     <View style={styles.inputContainer}>
       <Text style={[styles.inputLabel, { color: theme.colors.text }]}>{label}</Text>
       <View style={styles.inputWrapper}>
@@ -53,12 +78,85 @@ const EnvironmentalForm = React.memo(({ environmentalData, onUpdateData }) => {
           returnKeyType={multiline ? 'default' : 'done'}
           placeholderTextColor={theme.isDark ? '#666' : '#999'}
         />
-        {suffix && (
-          <Text style={[styles.suffix, { color: theme.colors.text }]}>{suffix}</Text>
-        )}
       </View>
     </View>
   );
+
+  const renderSiteDropdown = () => (
+    <View style={styles.inputContainer}>
+      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Site</Text>
+      <TouchableOpacity
+        style={[styles.dropdownButton, { 
+          backgroundColor: theme.isDark ? '#1a1a1a' : '#f5f5f5',
+          borderColor: theme.isDark ? '#333' : '#e0e0e0',
+        }]}
+        onPress={() => setShowSiteModal(true)}
+      >
+        <Text style={[styles.dropdownButtonText, { color: theme.colors.text }]}>
+          {sites.find(site => site.id === reportData.site)?.name || 'Select a site...'}
+        </Text>
+        <Text style={styles.dropdownIcon}>▼</Text>
+      </TouchableOpacity>
+
+      <Modal
+        visible={showSiteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSiteModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSiteModal(false)}
+        >
+          <View style={[styles.modalContent, {
+            backgroundColor: theme.isDark ? '#1a1a1a' : '#fff',
+          }]}>
+            <ScrollView>
+              {sites.map((site) => (
+                <TouchableOpacity
+                  key={site.id}
+                  style={[styles.siteOption, {
+                    backgroundColor: reportData.site === site.id 
+                      ? theme.colors.primary 
+                      : 'transparent'
+                  }]}
+                  onPress={() => {
+                    onUpdateData('site', site.id);
+                    setShowSiteModal(false);
+                  }}
+                >
+                  <Text style={[styles.siteOptionText, {
+                    color: reportData.site === site.id 
+                      ? '#fff' 
+                      : theme.colors.text
+                  }]}>
+                    {site.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+
+  const renderWorkerInfo = () => (
+    <View style={styles.inputContainer}>
+      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Worker</Text>
+      <View style={[styles.workerInfo, { 
+        backgroundColor: theme.isDark ? '#1a1a1a' : '#f5f5f5',
+        borderColor: theme.isDark ? '#333' : '#e0e0e0',
+      }]}>
+        <Text style={[styles.workerName, { color: theme.colors.text }]}>
+          {currentUser?.displayName || currentUser?.email || 'Unknown Worker'}
+        </Text>
+      </View>
+    </View>
+  );
+
+  const weatherOptions = ['Sunny', 'Cloudy', 'Rainy', 'Stormy'];
 
   const renderSelectField = ({ label, value, options, key }) => (
     <View style={styles.inputContainer}>
@@ -95,38 +193,25 @@ const EnvironmentalForm = React.memo(({ environmentalData, onUpdateData }) => {
   return (
     <View style={styles.formSection}>
       <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-        Environmental Data
+        Report Details
       </Text>
       {renderInput({
-        label: 'Temperature',
-        value: environmentalData.temperature,
-        key: 'temperature',
-        keyboardType: 'numeric',
-        suffix: '°C'
+        label: 'Title',
+        value: reportData.title,
+        key: 'title'
       })}
-      {renderInput({
-        label: 'Humidity',
-        value: environmentalData.humidity,
-        key: 'humidity',
-        keyboardType: 'numeric',
-        suffix: '%'
-      })}
+      {renderWorkerInfo()}
+      {renderSiteDropdown()}
       {renderSelectField({
-        label: 'Weather Condition',
-        value: environmentalData.weather,
+        label: 'Weather',
+        value: reportData.weather,
         options: weatherOptions,
         key: 'weather'
       })}
-      {renderSelectField({
-        label: 'Light Condition',
-        value: environmentalData.lightCondition,
-        options: lightConditions,
-        key: 'lightCondition'
-      })}
       {renderInput({
-        label: 'Additional Notes',
-        value: environmentalData.notes,
-        key: 'notes',
+        label: 'Description',
+        value: reportData.description,
+        key: 'description',
         multiline: true
       })}
     </View>
@@ -148,18 +233,43 @@ const CaptureScreen = ({ navigation }) => {
   });
 
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [imageData, setImageData] = useState(null);
-  const [environmentalData, setEnvironmentalData] = useState({
-    temperature: '',
-    humidity: '',
-    weather: 'sunny',
-    lightCondition: 'daylight',
-    notes: '',
+  const [sites, setSites] = useState([]);
+  const [reportData, setReportData] = useState({
+    title: '',
+    site: '',
+    timestamp: new Date().toISOString(),
+    worker: user?.displayName || user?.email || '',
+    weather: 'Sunny',
+    description: '',
+    imageUrl: ''
   });
 
+  useEffect(() => {
+    fetchSites();
+  }, []);
+
+  const fetchSites = async () => {
+    try {
+      const sitesSnapshot = await firestore().collection('sites').get();
+      const sitesData = sitesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setSites(sitesData);
+    } catch (error) {
+      console.error('Error fetching sites:', error);
+      Alert.alert('Error', 'Failed to load sites. Please try again.');
+    }
+  };
+
   const handleUpdateData = (key, value) => {
-    console.log(`Updating ${key}:`, value);
-    setEnvironmentalData(prev => ({ ...prev, [key]: value }));
+    setReportData(prev => ({
+      ...prev,
+      [key]: value
+    }));
   };
 
   const handleCapture = async () => {
@@ -266,50 +376,57 @@ const CaptureScreen = ({ navigation }) => {
         return;
       }
 
-      if (!environmentalData.temperature || !environmentalData.humidity) {
-        Alert.alert('Error', 'Please fill in temperature and humidity data.');
+      if (!reportData.title || !reportData.site) {
+        Alert.alert('Error', 'Please fill in all required fields.');
         return;
       }
 
-      // Validate temperature and humidity values
-      const temp = parseFloat(environmentalData.temperature);
-      const hum = parseFloat(environmentalData.humidity);
+      setLoading(true);
 
-      if (isNaN(temp) || temp < -50 || temp > 60) {
-        Alert.alert('Error', 'Please enter a valid temperature between -50°C and 60°C.');
-        return;
+      // Upload image to Firebase Storage
+      const imageUrl = await uploadImageToFirebase(imageData.uri, 'reports');
+
+      // Find the selected site details
+      const selectedSite = sites.find(site => site.id === reportData.site);
+      if (!selectedSite) {
+        throw new Error('Selected site not found');
       }
 
-      if (isNaN(hum) || hum < 0 || hum > 100) {
-        Alert.alert('Error', 'Please enter a valid humidity between 0% and 100%.');
-        return;
-      }
-
-      // Create the environmental data object for submission
-      const environmentalDataObject = {
-        temperature: temp,
-        humidity: hum,
-        weather: environmentalData.weather,
-        lightCondition: environmentalData.lightCondition,
-        notes: environmentalData.notes,
+      // Create the report data object for Firestore
+      const reportDataObject = {
+        title: reportData.title,
+        site: selectedSite.name, // Use site name instead of ID
+        siteLocation: selectedSite.location, // Add site location
         timestamp: new Date().toISOString(),
+        worker: user?.displayName || user?.email || '',
+        weather: reportData.weather,
+        description: reportData.description || '',
+        imageUrl: imageUrl
       };
+
+      // Save to Firestore
+      await firestore()
+        .collection('reports')
+        .doc() // Let Firestore auto-generate the ID
+        .set(reportDataObject);
 
       Alert.alert(
         'Success',
-        'Image captured and processed successfully! Backend integration pending.',
+        'Report submitted successfully!',
         [
           {
             text: 'OK',
             onPress: () => {
               // Clear the form
               setImageData(null);
-              setEnvironmentalData({
-                temperature: '',
-                humidity: '',
-                weather: 'sunny',
-                lightCondition: 'daylight',
-                notes: '',
+              setReportData({
+                title: '',
+                site: '',
+                timestamp: new Date().toISOString(),
+                worker: user?.displayName || user?.email || '',
+                weather: 'Sunny',
+                description: '',
+                imageUrl: ''
               });
               navigation.goBack();
             },
@@ -317,8 +434,10 @@ const CaptureScreen = ({ navigation }) => {
         ]
       );
     } catch (error) {
-      console.error('Error submitting data:', error);
-      Alert.alert('Error', 'Failed to submit data. Please try again.');
+      console.error('Error submitting report:', error);
+      Alert.alert('Error', 'Failed to submit report. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -363,12 +482,14 @@ const CaptureScreen = ({ navigation }) => {
                 onPress={() => {
                   Keyboard.dismiss();
                   setImageData(null);
-                  setEnvironmentalData({
-                    temperature: '',
-                    humidity: '',
-                    weather: 'sunny',
-                    lightCondition: 'daylight',
-                    notes: '',
+                  setReportData({
+                    title: '',
+                    site: '',
+                    timestamp: new Date().toISOString(),
+                    worker: user?.displayName || user?.email || '',
+                    weather: 'Sunny',
+                    description: '',
+                    imageUrl: ''
                   });
                 }}
               >
@@ -408,63 +529,36 @@ const CaptureScreen = ({ navigation }) => {
           </View>
         </View>
 
-        <EnvironmentalForm
-          environmentalData={environmentalData}
+        <ReportForm
+          reportData={reportData}
           onUpdateData={handleUpdateData}
+          sites={sites}
+          currentUser={user}
         />
 
         <TouchableOpacity
-          style={[styles.submitButton, { backgroundColor: theme.colors.primary }]}
+          style={[
+            styles.submitButton,
+            { backgroundColor: theme.colors.primary },
+            loading && styles.disabledButton
+          ]}
           onPress={handleSubmit}
+          disabled={loading}
         >
-          <Text style={styles.emoji}>📤</Text>
-          <Text style={styles.buttonText}>Submit</Text>
+          {loading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <Text style={styles.emoji}>📤</Text>
+              <Text style={styles.buttonText}>Submit Report</Text>
+            </>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
   );
 };
 
-// Simplified styles
-const basicStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
-  content: {
-    padding: 16,
-  },
-  form: {
-    gap: 16,
-    marginTop: 20,
-  },
-  inputContainer: {
-    marginBottom: 8,
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  input: {
-    flex: 1,
-    height: 40,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    backgroundColor: 'white',
-  },
-  suffix: {
-    marginLeft: 8,
-    fontSize: 16,
-  },
-});
-
-// Keep the original styles object for other components
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -532,7 +626,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   formSection: {
-    marginBottom: 24,
+    marginTop: 24,
   },
   sectionTitle: {
     fontSize: 18,
@@ -543,9 +637,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 16,
     marginBottom: 8,
-    opacity: 0.7,
+    fontWeight: '500',
   },
   inputWrapper: {
     flexDirection: 'row',
@@ -553,23 +647,32 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    height: 48,
+    height: 40,
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   multilineInput: {
     height: 100,
-    paddingTop: 12,
-    paddingBottom: 12,
     textAlignVertical: 'top',
+    paddingTop: 12,
   },
-  suffix: {
-    marginLeft: 8,
+  pickerContainer: {
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  picker: {
+    height: 40,
+    width: '100%',
+  },
+  workerInfo: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+  },
+  workerName: {
     fontSize: 16,
-    opacity: 0.7,
   },
   optionsContainer: {
     flexDirection: 'row',
@@ -577,15 +680,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   optionButton: {
-    paddingHorizontal: 16,
     paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 20,
     borderWidth: 1,
-    marginRight: 8,
-    marginBottom: 8,
   },
   optionText: {
     fontSize: 14,
+    fontWeight: '500',
   },
   submitButton: {
     flexDirection: 'row',
@@ -608,14 +710,47 @@ const styles = StyleSheet.create({
   },
   removeImageButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    top: -8,
+    right: -8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  removeImageText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+  },
+  dropdownIcon: {
+    fontSize: 12,
+    opacity: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    maxHeight: 300,
+    borderRadius: 8,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -628,8 +763,13 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  removeImageText: {
-    fontSize: 20,
+  siteOption: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  siteOptionText: {
+    fontSize: 16,
   },
 });
 

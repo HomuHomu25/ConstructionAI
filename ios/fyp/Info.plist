@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>ConstructionAI</string>
+	<string>fyp</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -33,7 +33,11 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>We need your location to provide accurate weather information for your area.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>We need your location to provide accurate weather information for your area.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>We need your location to provide accurate weather information for your area.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs access to camera to take profile pictures.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -44,7 +48,7 @@
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>arm64</string>
+		<string>armv7</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
