@@ -5,6 +5,7 @@ import { useTheme } from '../context/ThemeContext';
 import HomeScreen from '../screens/home/HomeScreen';
 import CaptureScreen from '../screens/capture/CaptureScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
+import HistoryScreen from '../screens/history/HistoryScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -53,6 +54,16 @@ const MainTabNavigator = () => {
           title: "Capture",
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="📸" focused={focused} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="History"
+        component={HistoryScreen}
+        options={{
+          title: "History",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="📋" focused={focused} />
           ),
         }}
       />

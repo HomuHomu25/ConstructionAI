@@ -25,8 +25,11 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import storage from '@react-native-firebase/storage';
 import firestore from '@react-native-firebase/firestore';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import Geolocation from 'react-native-geolocation-service';
+import axios from 'axios';
 
 const TARGET_IMAGE_SIZE = 512; // Size for normalized images
+const WEATHER_API_KEY = '069ce631acc103528ffaeecc551bb175';
 
 // Helper function to upload image to Firebase Storage
 const uploadImageToFirebase = async (uri, path) => {
@@ -51,6 +54,92 @@ const uploadImageToFirebase = async (uri, path) => {
 const ReportForm = React.memo(({ reportData, onUpdateData, sites, currentUser }) => {
   const { theme } = useTheme();
   const [showSiteModal, setShowSiteModal] = useState(false);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState(null);
+
+  useEffect(() => {
+    fetchCurrentWeather();
+  }, []);
+
+  const requestLocationPermission = async () => {
+    try {
+      if (Platform.OS === 'ios') {
+        const auth = await Geolocation.requestAuthorization('whenInUse');
+        return auth === 'granted';
+      }
+
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        {
+          title: 'Location Permission',
+          message: 'We need your location to provide accurate weather information.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        }
+      );
+
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (err) {
+      console.error('Error requesting location permission:', err);
+      return false;
+    }
+  };
+
+  const getCurrentLocation = () => {
+    return new Promise((resolve, reject) => {
+      Geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        (error) => {
+          reject(error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 10000,
+        }
+      );
+    });
+  };
+
+  const fetchCurrentWeather = async () => {
+    try {
+      setWeatherLoading(true);
+      setWeatherError(null);
+
+      const hasPermission = await requestLocationPermission();
+      if (!hasPermission) {
+        throw new Error('Location permission denied');
+      }
+
+      const coords = await getCurrentLocation();
+      const response = await axios.get(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${coords.latitude}&lon=${coords.longitude}&appid=${WEATHER_API_KEY}&units=metric`
+      );
+
+      if (!response?.data) {
+        throw new Error('Invalid response from weather API');
+      }
+
+      const condition = response.data.weather?.[0]?.main || 'Unknown';
+      const temperature = Math.round(response.data.main?.temp) || 0;
+      const humidity = response.data.main?.humidity || 0;
+
+      // Update the weather in reportData with a formatted string only
+      onUpdateData('weather', `${condition}, ${temperature}°C, Humidity: ${humidity}%`);
+    } catch (error) {
+      console.error('Error fetching weather:', error);
+      setWeatherError(error.message);
+      onUpdateData('weather', 'Unknown');
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
 
   const renderInput = ({ label, value, key, keyboardType = 'default', multiline = false }) => (
     <View style={styles.inputContainer}>
@@ -144,48 +233,43 @@ const ReportForm = React.memo(({ reportData, onUpdateData, sites, currentUser })
 
   const renderWorkerInfo = () => (
     <View style={styles.inputContainer}>
-      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Worker</Text>
+      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>User ID</Text>
       <View style={[styles.workerInfo, { 
         backgroundColor: theme.isDark ? '#1a1a1a' : '#f5f5f5',
         borderColor: theme.isDark ? '#333' : '#e0e0e0',
       }]}>
         <Text style={[styles.workerName, { color: theme.colors.text }]}>
-          {currentUser?.displayName || currentUser?.email || 'Unknown Worker'}
+          {currentUser?.displayName || currentUser?.email || 'Unknown User'}
         </Text>
       </View>
     </View>
   );
 
-  const weatherOptions = ['Sunny', 'Cloudy', 'Rainy', 'Stormy'];
-
-  const renderSelectField = ({ label, value, options, key }) => (
+  const renderWeatherInfo = () => (
     <View style={styles.inputContainer}>
-      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>{label}</Text>
-      <View style={styles.optionsContainer}>
-        {options.map((option) => (
-          <TouchableOpacity
-            key={option}
-            style={[
-              styles.optionButton,
-              {
-                backgroundColor: value === option ? theme.colors.primary : 'transparent',
-                borderColor: value === option ? theme.colors.primary : theme.colors.border,
-              },
-            ]}
-            onPress={() => onUpdateData(key, option)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                {
-                  color: value === option ? '#fff' : theme.colors.text,
-                },
-              ]}
-            >
-              {option}
+      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Weather</Text>
+      <View style={[styles.weatherInfo, { 
+        backgroundColor: theme.isDark ? '#1a1a1a' : '#f5f5f5',
+        borderColor: theme.isDark ? '#333' : '#e0e0e0',
+      }]}>
+        {weatherLoading ? (
+          <ActivityIndicator size="small" color={theme.colors.primary} />
+        ) : weatherError ? (
+          <View style={styles.weatherErrorContainer}>
+            <Text style={[styles.weatherError, { color: theme.colors.error }]}>
+              {weatherError}
             </Text>
-          </TouchableOpacity>
-        ))}
+            <TouchableOpacity onPress={fetchCurrentWeather}>
+              <Text style={[styles.retryButton, { color: theme.colors.primary }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Text style={[styles.weatherValue, { color: theme.colors.text }]}>
+            {reportData.weather || 'Loading weather...'}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -202,12 +286,7 @@ const ReportForm = React.memo(({ reportData, onUpdateData, sites, currentUser })
       })}
       {renderWorkerInfo()}
       {renderSiteDropdown()}
-      {renderSelectField({
-        label: 'Weather',
-        value: reportData.weather,
-        options: weatherOptions,
-        key: 'weather'
-      })}
+      {renderWeatherInfo()}
       {renderInput({
         label: 'Description',
         value: reportData.description,
@@ -240,9 +319,10 @@ const CaptureScreen = ({ navigation }) => {
   const [reportData, setReportData] = useState({
     title: '',
     site: '',
-    timestamp: new Date().toISOString(),
-    worker: user?.displayName || user?.email || '',
+    timestamp: new Date(),
+    userId: user?.displayName || user?.email || '',
     weather: 'Sunny',
+    weatherData: null,
     description: '',
     imageUrl: ''
   });
@@ -278,7 +358,7 @@ const CaptureScreen = ({ navigation }) => {
     const hasPermission = await requestCameraPermission();
     
     if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Please grant camera permission to take photos.');
+      Alert.alert('Permission Denied', 'Please grant camera permission to take pictures.');
       return;
     }
 
@@ -383,8 +463,8 @@ const CaptureScreen = ({ navigation }) => {
 
       setLoading(true);
 
-      // Upload image to Firebase Storage
-      const imageUrl = await uploadImageToFirebase(imageData.uri, 'reports');
+      // Upload image to Firebase Storage root path
+      const imageUrl = await uploadImageToFirebase(imageData.uri, '');
 
       // Find the selected site details
       const selectedSite = sites.find(site => site.id === reportData.site);
@@ -392,23 +472,39 @@ const CaptureScreen = ({ navigation }) => {
         throw new Error('Selected site not found');
       }
 
+      // Create timestamp once to ensure consistency
+      const timestamp = new Date();
+
       // Create the report data object for Firestore
       const reportDataObject = {
         title: reportData.title,
-        site: selectedSite.name, // Use site name instead of ID
-        siteLocation: selectedSite.location, // Add site location
-        timestamp: new Date().toISOString(),
-        worker: user?.displayName || user?.email || '',
+        site: selectedSite.name,
+        siteLocation: selectedSite.location,
+        timestamp: timestamp,
+        userId: user?.displayName || user?.email || '',
         weather: reportData.weather,
         description: reportData.description || '',
         imageUrl: imageUrl
       };
 
+      console.log('Submitting report with timestamp:', reportDataObject.timestamp);
+      
       // Save to Firestore
-      await firestore()
+      const docRef = await firestore()
         .collection('reports')
-        .doc() // Let Firestore auto-generate the ID
-        .set(reportDataObject);
+        .doc();
+      
+      await docRef.set(reportDataObject);
+      
+      console.log('Report saved with ID:', docRef.id);
+
+      // Add the document ID to the report object
+      const reportWithId = {
+        id: docRef.id,
+        ...reportDataObject,
+        // Ensure timestamp is a Date object for proper sorting
+        timestamp: timestamp
+      };
 
       Alert.alert(
         'Success',
@@ -422,13 +518,15 @@ const CaptureScreen = ({ navigation }) => {
               setReportData({
                 title: '',
                 site: '',
-                timestamp: new Date().toISOString(),
-                worker: user?.displayName || user?.email || '',
-                weather: 'Sunny',
+                timestamp: new Date(),
+                userId: user?.displayName || user?.email || '',
+                weather: '',
                 description: '',
                 imageUrl: ''
               });
-              navigation.goBack();
+              
+              // Navigate to History screen with the new report
+              navigation.navigate('History', { newReport: reportWithId });
             },
           },
         ]
@@ -485,9 +583,9 @@ const CaptureScreen = ({ navigation }) => {
                   setReportData({
                     title: '',
                     site: '',
-                    timestamp: new Date().toISOString(),
-                    worker: user?.displayName || user?.email || '',
-                    weather: 'Sunny',
+                    timestamp: new Date(),
+                    userId: user?.displayName || user?.email || '',
+                    weather: '',
                     description: '',
                     imageUrl: ''
                   });
@@ -770,6 +868,30 @@ const styles = StyleSheet.create({
   },
   siteOptionText: {
     fontSize: 16,
+  },
+  weatherInfo: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  weatherValue: {
+    fontSize: 16,
+  },
+  weatherErrorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  weatherError: {
+    fontSize: 14,
+    flex: 1,
+  },
+  retryButton: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 
